@@ -1,10 +1,10 @@
 'use client'
 
 import {Button, NumberInput, Select, Stack, Textarea, TextInput } from '@mantine/core';
+import {DateInput} from "@mantine/dates";
 import {useState} from "react";
 import {z} from 'zod';
 import {useAddTransaction} from "@/widgets/transaction-form/hooks/addTransaction";
-import {DateInput} from "@mantine/dates";
 
 export const transaction = z.object({
   transactionDate: z.string(),

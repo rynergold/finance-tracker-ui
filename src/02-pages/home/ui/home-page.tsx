@@ -1,9 +1,8 @@
-import {TransactionForm} from "@/widgets/transaction-form/transaction-form";
+import {FinancesTable} from "@/widgets/finances-table/finances-table";
 
 export function HomePage() {
 
     return (
-
-            <TransactionForm />
+      <FinancesTable />
     );
 }
