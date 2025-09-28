@@ -1,4 +1,4 @@
-import {useMutation} from "@tanstack/react-query";
+import {useMutation, useQueryClient} from "@tanstack/react-query";
 import type {Transaction} from "@/widgets/transaction-form/transaction-form";
 
 export const addTransaction = async (transaction: Transaction) => {
@@ -10,11 +10,16 @@ export const addTransaction = async (transaction: Transaction) => {
   if (!response.ok) {
     throw new Error(response.statusText)
   }
-  return response.json()
+  return response.text();
 }
 
 export function useAddTransaction() {
+  const queryClient = useQueryClient();
+
   return useMutation({
-    mutationFn: addTransaction
+    mutationFn: addTransaction,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    }
   })
 }
