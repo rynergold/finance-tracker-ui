@@ -1,135 +1,285 @@
 "use client";
+
+import {ActionIcon, Button, Text, Tooltip} from "@mantine/core";
+import {modals} from "@mantine/modals";
+import {IconTrash} from "@tabler/icons-react";
 import {
-  AllCommunityModule,
-  type ColDef,
-  ColumnAutoSizeModule,
-  type EditableCallbackParams,
-  type GetRowIdParams,
-  ModuleRegistry,
-  PinnedRowModule,
-  type RowEditingStoppedEvent,
-  SelectEditorModule,
-  themeQuartz
-} from 'ag-grid-community';
-import {AgGridReact} from 'ag-grid-react';
-import {useCallback, useMemo, useRef, useState} from "react";
-import {useFetchTransactions} from "@/widgets/finances-table/hooks/fetchTransactions";
-import {useAddTransaction} from "@/widgets/transaction-form/hooks/addTransaction";
-import type {Transaction} from "@/widgets/transaction-form/transaction-form";
-
-ModuleRegistry.registerModules([AllCommunityModule, ColumnAutoSizeModule, PinnedRowModule, SelectEditorModule]);
-
-const formatCurrencyGBP = (amount: number | null | undefined): string => {
-  if (amount == null) return '';
-  return `£${amount.toLocaleString()}`;
-};
+  MantineReactTable, type MRT_ColumnDef, type MRT_Row, type MRT_TableOptions,
+  useMantineReactTable,
+} from 'mantine-react-table';
+import {useMemo, useState} from "react";
+import {useAddTransaction} from "@/shared/lib/hooks/addTransaction";
+import {useDeleteTransaction} from "@/shared/lib/hooks/deleteTransaction";
+import {useFetchTransactions} from "@/shared/lib/hooks/fetchTransactions";
+import type {Transaction} from "@/shared/types/transaction";
 
 export function FinancesTable() {
-  const gridRef = useRef<AgGridReact>(null);
-  const {data = [], isLoading, error, refetch} = useFetchTransactions();
-  const {mutate: addTransaction} = useAddTransaction();
-  const [pinnedTopRowData, setPinnedTopRowData] = useState([]);
 
-  const columnDefs = useState<ColDef<Transaction>[]>([
-    {field: 'transactionDate', headerName: 'Date'},
-    {
-      field: 'transactionType',
-      headerName: 'Type',
-      cellEditor: 'agSelectCellEditor',
-      cellEditorParams: {
-        values: ['INCOME', 'EXPENSE']
-      }
-    },
-    {field: 'category', headerName: 'Category'},
-    {
-      field: 'amount',
-      headerName: 'Amount',
-      valueFormatter: params => formatCurrencyGBP(params.value)
-    },
-    {field: 'description', headerName: 'Description'}
-  ])[0];
+  /* === STATES FOR VALIDATION & EDIT === */
+  const [validationErrors, setValidationErrors] = useState<
+    Record<string, string | undefined>
+  >({});
+  //keep track of rows that have been edited
+  const [editedTransactions, setEditedTransactions] = useState<Record<string, Transaction>>({});
+  /* === END OF VALIDATION & EDIT STATES === */
 
-  const defaultColDef = useMemo<ColDef>(() => {
-    return {
-      editable: (params: EditableCallbackParams) => {
-        return params.node.id === 'new-transaction';
-      },
-    };
-  }, []);
+  /* === HOOKS === */
+  // READ hook
+  const {
+    data: fetchedTransactions = [],
+    isError: isLoadingTransactionsError,
+    isFetching: isFetchingTransactions,
+    isLoading: isLoadingTransactions,
+  } = useFetchTransactions();
+  // CREATE hook
+  const {mutateAsync: createTransaction, isPending: isCreatingTransaction} = useAddTransaction();
 
-  const getRowId = useCallback((params: GetRowIdParams) =>
-      params.data.id?.toString() ?? 'new-transaction',
-    []);
+  // DELETE hook
+  const {mutateAsync: deleteTransaction, isPending: isDeletingTransaction} =
+    useDeleteTransaction();
 
-  const addNewTransaction = useCallback(() => {
-    const {api} = gridRef.current || {};
-    if (!api) return;
+  /* === END OF HOOKS === */
 
-    api.setGridOption("pinnedTopRowData", [
+  /* === DEFINE TABLE COLUMN & ROWS === */
+  // useMemo for stable reference to prevent infinite re-renders
+  const columns = useMemo<MRT_ColumnDef<Transaction>[]>(
+    () => [
       {
-        transactionDate: null,
-        transactionType: null,
-        category: null,
-        amount: null,
-        description: null
+        accessorKey: 'transactionDate',
+        header: 'Date',
+        size: 120,
+        mantineEditTextInputProps: ({cell, row}) => ({
+          type: 'date',
+          required: true,
+          error: validationErrors?.[cell.id],
+          onBlur: (event) => {
+            const validationError = !validateRequired(event.currentTarget.value)
+              ? 'Date is Required'
+              : undefined;
+            setValidationErrors({
+              ...validationErrors,
+              [cell.id]: validationError,
+            });
+            setEditedTransactions({...editedTransactions, [row.id]: row.original});
+          },
+        }),
       },
-    ]);
-
-    setTimeout(() => {
-      api.startEditingCell({
-        rowIndex: 0,
-        rowPinned: "top",
-        colKey: "transactionDate",
-      });
-    });
-  }, []);
-
-  const onRowEditingStopped = useCallback(
-    (params: RowEditingStoppedEvent) => {
-      const {data: newTransaction} = params;
-
-      setPinnedTopRowData([]);
-
-      if (newTransaction.transactionDate == null) {
-        return;
-      }
-
-      console.log('Adding transaction:', newTransaction);
-
-      addTransaction(newTransaction, {
-        onSuccess: () => {
-          console.log('Transaction saved successfully, refetching...');
-          refetch();
+      {
+        accessorKey: 'transactionType',
+        header: 'Type',
+        size: 100,
+        editVariant: 'select',
+        mantineEditSelectProps: ({cell, row}) => ({
+          data: [
+            {value: 'INCOME', label: 'Income'},
+            {value: 'EXPENSE', label: 'Expense'},
+          ],
+          error: validationErrors?.[cell.id],
+          onBlur: (event) => {
+            const validationError = !validateRequired(event.currentTarget.value)
+              ? 'Type is Required'
+              : undefined;
+            setValidationErrors({
+              ...validationErrors,
+              [cell.id]: validationError,
+            })
+          },
+          // biome-ignore lint/suspicious/noExplicitAny: Following Mantine React Table docs
+          onChange: (value: any) =>
+            setEditedTransactions({
+              ...editedTransactions,
+              [row.id]: {...row.original, transactionType: value},
+            }),
+        }),
+      },
+      {
+        accessorKey: 'category',
+        header: 'Category',
+        size: 150,
+        mantineEditTextInputProps: ({cell, row}) => ({
+          type: 'text',
+          required: true,
+          error: validationErrors?.[cell.id],
+          onBlur: (event) => {
+            const validationError = !validateRequired(event.currentTarget.value)
+              ? 'Category is Required'
+              : undefined;
+            setValidationErrors({
+              ...validationErrors,
+              [cell.id]: validationError,
+            });
+            setEditedTransactions({...editedTransactions, [row.id]: row.original});
+          },
+        }),
+      },
+      {
+        accessorKey: 'amount',
+        header: 'Amount',
+        size: 100,
+        Cell: ({cell}) => {
+          const amount = cell.getValue<number>();
+          return `£${amount?.toFixed(2) || '0.00'}`;
         },
-        onError: (error) => {
-          console.error('Failed to save transaction:', error);
+        mantineEditTextInputProps: ({cell, row}) => ({
+          type: 'number',
+          step: '0.01',
+          leftSection: '£',
+          required: true,
+          error: validationErrors?.[cell.id],
+          onBlur: (event) => {
+            const amount = parseFloat(event.currentTarget.value);
+            const validationError = !amount || amount <= 0
+              ? 'Amount must be positive'
+              : undefined;
+            setValidationErrors({
+              ...validationErrors,
+              [cell.id]: validationError,
+            });
+            setEditedTransactions({
+              ...editedTransactions,
+              [row.id]: {...row.original, amount: amount || 0}
+            });
+          },
+        }),
+      },
+      {
+        accessorKey: 'description',
+        header: 'Description',
+        size: 200,
+        mantineEditTextInputProps: ({row}) => ({
+          onBlur: (event) => {
+            setEditedTransactions({
+              ...editedTransactions,
+              [row.id]: {...row.original, description: event.currentTarget.value},
+            });
+          },
+        }),
+      },
+    ],
+    [editedTransactions, validationErrors]
+  );
+  /* === END OF TABLE COLS & ROWS === */
+
+  /* === TABLE ACTIONS === */
+  // CREATE action
+  const handleCreateTransaction: MRT_TableOptions<Transaction>['onCreatingRowSave'] = async ({
+    values,
+    exitCreatingMode,
+  }) => {
+    const newValidationErrors = validateTransaction(values);
+    if (Object.values(newValidationErrors).some((error) => !!error)) {
+      setValidationErrors(newValidationErrors);
+      return;
+    }
+    setValidationErrors({});
+    await createTransaction(values);
+    exitCreatingMode();
+  };
+
+  //DELETE action
+  const openDeleteConfirmModal = (row: MRT_Row<Transaction>) => {
+    console.log('Row data: ', row.original);
+    console.log('Transaction ID: ', row.original.id)
+
+    return modals.openConfirmModal({
+      title: 'Are you sure you want to delete this user?',
+      children: (
+        <Text>
+          Are you sure you want to delete this transaction for{' '}
+          <strong>£{row.original.amount?.toFixed(2)}</strong> in{' '}
+          <strong>{row.original.category}</strong>? This action cannot be undone.
+        </Text>
+      ),
+      labels: {confirm: 'Delete', cancel: 'Cancel'},
+      confirmProps: {color: 'red'},
+      onConfirm: async () => {
+        try {
+          await deleteTransaction(row.original.id);
+        } catch (error) {
+          // Error is already handled in the hook
+          console.error('Delete failed:', error);
         }
-      });
+      },
+    });
+  };
+
+  /* === END OF TABLE ACTIONS === */
+
+  const table = useMantineReactTable({
+    columns,
+    data: fetchedTransactions,
+    createDisplayMode: 'row',
+    editDisplayMode: 'table',
+    enableEditing: true,
+    enableRowActions: true,
+    positionActionsColumn: 'last',
+    // TODO: Fix ID issue
+    getRowId: (row, index) => row.id?.toString() ?? index.toString(),
+    enableRowSelection: true,
+    enableColumnActions: true,
+    enableColumnFilters: true,
+    enablePagination: true,
+    enableSorting: true,
+    mantineToolbarAlertBannerProps: isLoadingTransactionsError
+      ? {
+        color: 'red',
+        children: 'Error loading data',
+      }
+      : undefined,
+    mantineTableContainerProps: {
+      style: {
+        minHeight: '500px',
+      },
     },
-    [addTransaction, refetch],
-  );
-
-  if (error) return <div>Error loading transactions</div>;
-
-  return (
-    <div style={{width: "100%", height: "600px"}}>
-      <button type="button" onClick={addNewTransaction}>Add New Transaction</button>
-      <AgGridReact
-        ref={gridRef}
-        theme={themeQuartz}
-        rowData={data}
-        columnDefs={columnDefs}
-        defaultColDef={defaultColDef}
-        loading={isLoading}
-        editType="fullRow"
-        getRowId={getRowId}
-        pinnedTopRowData={pinnedTopRowData}
-        onRowEditingStopped={onRowEditingStopped}
-        autoSizeStrategy={{
-          type: 'fitGridWidth',
-          defaultMinWidth: 100
+    onCreatingRowCancel: () => setValidationErrors({}),
+    onCreatingRowSave: handleCreateTransaction,
+    renderRowActions: ({row}) => (
+      <Tooltip label="Delete">
+        <ActionIcon color="red" onClick={() => openDeleteConfirmModal(row)}>
+          <IconTrash/>
+        </ActionIcon>
+      </Tooltip>
+    ),
+    renderTopToolbarCustomActions: ({table}) => (
+      <Button
+        onClick={() => {
+          table.setCreatingRow(true);
         }}
-      />
-    </div>
-  );
+      >
+        Add Transaction
+      </Button>
+    ),
+    initialState: {
+      sorting: [
+        {
+          id: 'transactionDate',
+          desc: true, // (newest first)
+        },
+      ],
+    },
+    state: {
+      isLoading: isLoadingTransactions,
+      isSaving: isCreatingTransaction || isDeletingTransaction,
+      showAlertBanner: isLoadingTransactionsError,
+      showProgressBars: isFetchingTransactions,
+    },
+  });
+
+  return <MantineReactTable table={table}/>;
+}
+
+const validateRequired = (value: string) => !!value?.length;
+
+function validateTransaction(transaction: Transaction) {
+  return {
+    transactionDate: !validateRequired(transaction.transactionDate)
+      ? 'Date is required'
+      : '',
+    category: !validateRequired(transaction.category)
+      ? 'Category is required'
+      : '',
+    amount: transaction.amount <= 0
+      ? 'Amount must be positive'
+      : '',
+  };
 }
