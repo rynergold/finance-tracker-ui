@@ -5,7 +5,7 @@ import { type Transaction, transaction } from "@/shared/types/transaction";
 const transactionsResponse = z.array(transaction);
 
 export const fetchTransactions = async (): Promise<Transaction[]> => {
-  const response = await fetch('http://localhost:8080/transactions');
+  const response = await fetch('http://localhost:8080/api/transactions');
 
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);

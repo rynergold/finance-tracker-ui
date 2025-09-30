@@ -2,16 +2,20 @@
 
 import {ActionIcon, Button, Text, Tooltip} from "@mantine/core";
 import {modals} from "@mantine/modals";
-import {IconTrash} from "@tabler/icons-react";
+import {IconEdit, IconTrash} from "@tabler/icons-react";
 import {
   MantineReactTable, type MRT_ColumnDef, type MRT_Row, type MRT_TableOptions,
   useMantineReactTable,
 } from 'mantine-react-table';
 import {useMemo, useState} from "react";
+import {ManageCategoriesModal} from "@/features/ManageCategoriesModal";
 import {useAddTransaction} from "@/shared/lib/hooks/addTransaction";
 import {useDeleteTransaction} from "@/shared/lib/hooks/deleteTransaction";
+import {useFetchCategories} from "@/shared/lib/hooks/fetchCategories";
 import {useFetchTransactions} from "@/shared/lib/hooks/fetchTransactions";
-import type {Transaction} from "@/shared/types/transaction";
+import {useUpdateTransaction} from "@/shared/lib/hooks/updateTransaction";
+import {type Transaction, transactionInput} from "@/shared/types/transaction";
+import {useDeleteTransactions} from "@/shared/lib/hooks/deleteTransactions";
 
 export function FinancesTable() {
 
@@ -19,11 +23,11 @@ export function FinancesTable() {
   const [validationErrors, setValidationErrors] = useState<
     Record<string, string | undefined>
   >({});
-  //keep track of rows that have been edited
-  const [editedTransactions, setEditedTransactions] = useState<Record<string, Transaction>>({});
+  const [manageCategoriesOpened, setManageCategoriesOpened] = useState(false);
   /* === END OF VALIDATION & EDIT STATES === */
 
   /* === HOOKS === */
+  /* == TRANSACTIONS == */
   // READ hook
   const {
     data: fetchedTransactions = [],
@@ -34,9 +38,19 @@ export function FinancesTable() {
   // CREATE hook
   const {mutateAsync: createTransaction, isPending: isCreatingTransaction} = useAddTransaction();
 
+  // UPDATE hook
+  const {mutateAsync: updateTransaction, isPending: isUpdatingTransaction} = useUpdateTransaction();
+
   // DELETE hook
   const {mutateAsync: deleteTransaction, isPending: isDeletingTransaction} =
     useDeleteTransaction();
+
+  // BULK DELETE hook
+  const {mutateAsync: deleteTransactions, isPending: isDeletingTransactions} =
+    useDeleteTransactions();
+
+  /* == CATEGORIES == */
+  const {data: categories = [], isLoading: isLoadingCategories} = useFetchCategories();
 
   /* === END OF HOOKS === */
 
@@ -48,20 +62,9 @@ export function FinancesTable() {
         accessorKey: 'transactionDate',
         header: 'Date',
         size: 120,
-        mantineEditTextInputProps: ({cell, row}) => ({
+        mantineEditTextInputProps: () => ({
           type: 'date',
           required: true,
-          error: validationErrors?.[cell.id],
-          onBlur: (event) => {
-            const validationError = !validateRequired(event.currentTarget.value)
-              ? 'Date is Required'
-              : undefined;
-            setValidationErrors({
-              ...validationErrors,
-              [cell.id]: validationError,
-            });
-            setEditedTransactions({...editedTransactions, [row.id]: row.original});
-          },
         }),
       },
       {
@@ -69,47 +72,31 @@ export function FinancesTable() {
         header: 'Type',
         size: 100,
         editVariant: 'select',
-        mantineEditSelectProps: ({cell, row}) => ({
+        mantineEditSelectProps: () => ({
           data: [
             {value: 'INCOME', label: 'Income'},
             {value: 'EXPENSE', label: 'Expense'},
           ],
-          error: validationErrors?.[cell.id],
-          onBlur: (event) => {
-            const validationError = !validateRequired(event.currentTarget.value)
-              ? 'Type is Required'
-              : undefined;
-            setValidationErrors({
-              ...validationErrors,
-              [cell.id]: validationError,
-            })
-          },
-          // biome-ignore lint/suspicious/noExplicitAny: Following Mantine React Table docs
-          onChange: (value: any) =>
-            setEditedTransactions({
-              ...editedTransactions,
-              [row.id]: {...row.original, transactionType: value},
-            }),
         }),
       },
       {
-        accessorKey: 'category',
+        accessorKey: 'categoryId',
         header: 'Category',
         size: 150,
-        mantineEditTextInputProps: ({cell, row}) => ({
-          type: 'text',
+        editVariant: 'select',
+        Cell: ({cell}) => {
+          const categoryId = cell.getValue<number>();
+          const category = categories.find(c => c.id === categoryId);
+          return category?.categoryName || 'Unknown';
+        },
+        mantineEditSelectProps: () => ({
+          data: categories.map(cat => ({
+            value: cat.id.toString(),
+            label: cat.categoryName,
+          })),
           required: true,
-          error: validationErrors?.[cell.id],
-          onBlur: (event) => {
-            const validationError = !validateRequired(event.currentTarget.value)
-              ? 'Category is Required'
-              : undefined;
-            setValidationErrors({
-              ...validationErrors,
-              [cell.id]: validationError,
-            });
-            setEditedTransactions({...editedTransactions, [row.id]: row.original});
-          },
+          searchable: true,
+          disabled: isLoadingCategories,
         }),
       },
       {
@@ -120,43 +107,20 @@ export function FinancesTable() {
           const amount = cell.getValue<number>();
           return `£${amount?.toFixed(2) || '0.00'}`;
         },
-        mantineEditTextInputProps: ({cell, row}) => ({
+        mantineEditTextInputProps: () => ({
           type: 'number',
           step: '0.01',
           leftSection: '£',
           required: true,
-          error: validationErrors?.[cell.id],
-          onBlur: (event) => {
-            const amount = parseFloat(event.currentTarget.value);
-            const validationError = !amount || amount <= 0
-              ? 'Amount must be positive'
-              : undefined;
-            setValidationErrors({
-              ...validationErrors,
-              [cell.id]: validationError,
-            });
-            setEditedTransactions({
-              ...editedTransactions,
-              [row.id]: {...row.original, amount: amount || 0}
-            });
-          },
         }),
       },
       {
         accessorKey: 'description',
         header: 'Description',
         size: 200,
-        mantineEditTextInputProps: ({row}) => ({
-          onBlur: (event) => {
-            setEditedTransactions({
-              ...editedTransactions,
-              [row.id]: {...row.original, description: event.currentTarget.value},
-            });
-          },
-        }),
       },
     ],
-    [editedTransactions, validationErrors]
+    [categories, isLoadingCategories]
   );
   /* === END OF TABLE COLS & ROWS === */
 
@@ -166,20 +130,61 @@ export function FinancesTable() {
     values,
     exitCreatingMode,
   }) => {
-    const newValidationErrors = validateTransaction(values);
-    if (Object.values(newValidationErrors).some((error) => !!error)) {
-      setValidationErrors(newValidationErrors);
+    const result = transactionInput.safeParse(values);
+
+    if (!result.success) {
+      const zodErrors: Record<string, string> = {};
+      result.error.issues.forEach((issue) => {
+        if (issue.path[0]) {
+          zodErrors[issue.path[0].toString()] = issue.message;
+        }
+      });
+      setValidationErrors(zodErrors);
       return;
     }
+
     setValidationErrors({});
-    await createTransaction(values);
+    await createTransaction(result.data as Transaction);
     exitCreatingMode();
+  };
+
+  const handleSaveTransaction: MRT_TableOptions<Transaction>['onEditingRowSave'] = async ({
+    values,
+    table,
+    row,
+  }) => {
+    const dataToValidate = {
+      ...values,
+      id: row.original.id,
+    };
+
+    const result = transactionInput.safeParse(dataToValidate);
+
+    if (!result.success) {
+      console.error('Transaction validation failed:', result.error.issues);
+      const zodErrors: Record<string, string> = {};
+      result.error.issues.forEach((issue) => {
+        if (issue.path[0]) {
+          zodErrors[issue.path[0].toString()] = issue.message;
+        }
+      });
+      setValidationErrors(zodErrors);
+      return;
+    }
+
+    setValidationErrors({});
+
+    try {
+      await updateTransaction(result.data as Transaction);
+      table.setEditingRow(null);
+    } catch (error) {
+      console.error('Failed to update transaction:', error);
+    }
   };
 
   //DELETE action
   const openDeleteConfirmModal = (row: MRT_Row<Transaction>) => {
-    console.log('Row data: ', row.original);
-    console.log('Transaction ID: ', row.original.id)
+    const category = categories.find(c => c.id === row.original.categoryId);
 
     return modals.openConfirmModal({
       title: 'Are you sure you want to delete this user?',
@@ -187,7 +192,7 @@ export function FinancesTable() {
         <Text>
           Are you sure you want to delete this transaction for{' '}
           <strong>£{row.original.amount?.toFixed(2)}</strong> in{' '}
-          <strong>{row.original.category}</strong>? This action cannot be undone.
+          <strong>{category?.categoryName || 'Unknown'}</strong>? This action cannot be undone.
         </Text>
       ),
       labels: {confirm: 'Delete', cancel: 'Cancel'},
@@ -203,13 +208,45 @@ export function FinancesTable() {
     });
   };
 
+  const openBulkDeleteConfirmModal = (rows: MRT_Row<Transaction>[]) => {
+    const totalAmount = rows.reduce((sum, row) => sum + (row.original.amount || 0), 0);
+
+    return modals.openConfirmModal({
+      title: 'Delete Multiple Transactions',
+      children: (
+        <Text>
+          Are you sure you want to
+          delete <strong>{rows.length}</strong> transaction{rows.length === 1 ? '' : 's'}
+          {' '}totaling <strong>£{totalAmount.toFixed(2)}</strong>? This action cannot be undone.
+        </Text>
+      ),
+      labels: {confirm: 'Delete All', cancel: 'Cancel'},
+      confirmProps: {color: 'red'},
+      onConfirm: async () => {
+        try {
+          const ids = rows.map(row => row.original.id);
+          await deleteTransactions(ids);
+          table.resetRowSelection();
+        } catch (error) {
+          console.error('Bulk delete failed:', error);
+        }
+      },
+    });
+  };
+
   /* === END OF TABLE ACTIONS === */
 
   const table = useMantineReactTable({
     columns,
     data: fetchedTransactions,
     createDisplayMode: 'row',
-    editDisplayMode: 'table',
+    editDisplayMode: 'row',
+    mantineTableBodyRowProps: ({row, table}) => ({
+      onDoubleClick: () => {
+        table.setEditingRow(row);
+      },
+      style: {cursor: 'pointer'},
+    }),
     enableEditing: true,
     enableRowActions: true,
     positionActionsColumn: 'last',
@@ -233,22 +270,47 @@ export function FinancesTable() {
     },
     onCreatingRowCancel: () => setValidationErrors({}),
     onCreatingRowSave: handleCreateTransaction,
-    renderRowActions: ({row}) => (
-      <Tooltip label="Delete">
-        <ActionIcon color="red" onClick={() => openDeleteConfirmModal(row)}>
-          <IconTrash/>
-        </ActionIcon>
-      </Tooltip>
+    onEditingRowCancel: () => setValidationErrors({}),
+    onEditingRowSave: handleSaveTransaction,
+    renderRowActions: ({row, table}) => (
+      <div style={{display: 'flex', gap: '8px'}}>
+        <Tooltip label="Edit">
+          <ActionIcon onClick={() => table.setEditingRow(row)}>
+            <IconEdit/>
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Delete">
+          <ActionIcon color="red" onClick={() => openDeleteConfirmModal(row)}>
+            <IconTrash/>
+          </ActionIcon>
+        </Tooltip>
+      </div>
     ),
-    renderTopToolbarCustomActions: ({table}) => (
-      <Button
-        onClick={() => {
-          table.setCreatingRow(true);
-        }}
-      >
-        Add Transaction
-      </Button>
-    ),
+    renderTopToolbarCustomActions: ({table}) => {
+      const selectedRows = table.getSelectedRowModel().rows;
+      return (
+        <div style={{display: 'flex', gap: '8px'}}>
+          <Button onClick={() => table.setCreatingRow(true)}>
+            Add Transaction
+          </Button>
+          <Button
+            variant="light"
+            onClick={() => setManageCategoriesOpened(true)}
+          >
+            Manage Categories
+          </Button>
+          {selectedRows.length > 0 && (
+            <Button
+              color="red"
+              leftSection={<IconTrash size={16}/>}
+              onClick={() => openBulkDeleteConfirmModal(selectedRows)}
+            >
+              Delete {selectedRows.length} Selected
+            </Button>
+          )}
+        </div>
+      );
+    },
     initialState: {
       sorting: [
         {
@@ -259,27 +321,19 @@ export function FinancesTable() {
     },
     state: {
       isLoading: isLoadingTransactions,
-      isSaving: isCreatingTransaction || isDeletingTransaction,
+      isSaving: isCreatingTransaction || isUpdatingTransaction || isDeletingTransaction || isDeletingTransactions,
       showAlertBanner: isLoadingTransactionsError,
       showProgressBars: isFetchingTransactions,
     },
   });
 
-  return <MantineReactTable table={table}/>;
-}
-
-const validateRequired = (value: string) => !!value?.length;
-
-function validateTransaction(transaction: Transaction) {
-  return {
-    transactionDate: !validateRequired(transaction.transactionDate)
-      ? 'Date is required'
-      : '',
-    category: !validateRequired(transaction.category)
-      ? 'Category is required'
-      : '',
-    amount: transaction.amount <= 0
-      ? 'Amount must be positive'
-      : '',
-  };
+  return (
+    <>
+      <MantineReactTable table={table}/>
+      <ManageCategoriesModal
+        opened={manageCategoriesOpened}
+        onClose={() => setManageCategoriesOpened(false)}
+      />
+    </>
+  );
 }
