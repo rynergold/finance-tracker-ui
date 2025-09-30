@@ -1,6 +1,8 @@
 "use client";
 
 import {ActionIcon, Button, Text, Tooltip} from "@mantine/core";
+import '@mantine/dates/styles.css';
+import 'mantine-react-table/styles.css';
 import {modals} from "@mantine/modals";
 import {IconEdit, IconTrash} from "@tabler/icons-react";
 import {
@@ -11,11 +13,11 @@ import {useMemo, useState} from "react";
 import {ManageCategoriesModal} from "@/features/ManageCategoriesModal";
 import {useAddTransaction} from "@/shared/lib/hooks/addTransaction";
 import {useDeleteTransaction} from "@/shared/lib/hooks/deleteTransaction";
+import {useDeleteTransactions} from "@/shared/lib/hooks/deleteTransactions";
 import {useFetchCategories} from "@/shared/lib/hooks/fetchCategories";
 import {useFetchTransactions} from "@/shared/lib/hooks/fetchTransactions";
 import {useUpdateTransaction} from "@/shared/lib/hooks/updateTransaction";
 import {type Transaction, transactionInput} from "@/shared/types/transaction";
-import {useDeleteTransactions} from "@/shared/lib/hooks/deleteTransactions";
 
 export function FinancesTable() {
 
@@ -323,7 +325,6 @@ export function FinancesTable() {
       isLoading: isLoadingTransactions,
       isSaving: isCreatingTransaction || isUpdatingTransaction || isDeletingTransaction || isDeletingTransactions,
       showAlertBanner: isLoadingTransactionsError,
-      showProgressBars: isFetchingTransactions,
     },
   });
 
